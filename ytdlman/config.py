@@ -67,6 +67,15 @@ class DependencyInfo:
 
 
 @dataclass
+class AuthConfig:
+    username: str | None = None
+    password_hash: str | None = None
+    salt: str | None = None
+    secret_key: str | None = None
+    iterations: int = 200000
+
+
+@dataclass
 class Settings:
     music_dir: str = "music"
     audio_quality: str = "320"
@@ -81,6 +90,7 @@ class Config:
     settings: Settings = field(default_factory=Settings)
     dependencies: dict = field(default_factory=dict)
     playlists: list[Playlist] = field(default_factory=list)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
 
 def default_config() -> Config:
@@ -88,6 +98,7 @@ def default_config() -> Config:
         settings=Settings(),
         dependencies={name: DependencyInfo() for name in _DEP_NAMES},
         playlists=[],
+        auth=AuthConfig(),
     )
 
 
@@ -111,7 +122,9 @@ def _config_from_dict(data: dict) -> Config:
             added_at=pl["added_at"], last_sync=pl.get("last_sync"),
             next_track_number=pl.get("next_track_number", 1), tracks=tracks,
         ))
-    return Config(settings=settings, dependencies=dependencies, playlists=playlists)
+    auth = AuthConfig(**{**asdict(AuthConfig()), **data.get("auth", {})})
+    return Config(settings=settings, dependencies=dependencies,
+                  playlists=playlists, auth=auth)
 
 
 def load_config(path: Path) -> Config:
@@ -140,6 +153,7 @@ def save_config(config: Config, path: Path) -> None:
         "settings": asdict(config.settings),
         "dependencies": {k: asdict(v) for k, v in config.dependencies.items()},
         "playlists": [asdict(p) for p in config.playlists],
+        "auth": asdict(config.auth),
     }
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")

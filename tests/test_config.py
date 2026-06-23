@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from ytdlman.config import (
     Config, Playlist, Track, default_config, load_config, save_config,
-    STATUS_DOWNLOADED, Settings, validate_throttle,
+    STATUS_DOWNLOADED, Settings, validate_throttle, AuthConfig,
 )
 
 
@@ -94,3 +94,38 @@ def test_validate_throttle_ok():
 def test_validate_throttle_rejects(sleep, mx, limit):
     with pytest.raises(ValueError):
         validate_throttle(sleep, mx, limit)
+
+
+def test_auth_defaults_empty():
+    a = AuthConfig()
+    assert a.username is None and a.password_hash is None
+    assert a.salt is None and a.secret_key is None
+    assert a.iterations == 200000
+
+
+def test_config_has_auth_section():
+    assert isinstance(default_config().auth, AuthConfig)
+
+
+def test_auth_roundtrip(tmp_path):
+    cfg = default_config()
+    cfg.auth.username = "admin"
+    cfg.auth.password_hash = "deadbeef"
+    cfg.auth.salt = "abcd"
+    cfg.auth.secret_key = "key123"
+    p = tmp_path / "config.json"
+    save_config(cfg, p)
+    loaded = load_config(p)
+    assert loaded.auth.username == "admin"
+    assert loaded.auth.password_hash == "deadbeef"
+    assert loaded.auth.salt == "abcd"
+    assert loaded.auth.secret_key == "key123"
+
+
+def test_old_config_without_auth_loads_empty(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text(
+        '{"settings": {}, "dependencies": {}, "playlists": []}', encoding="utf-8")
+    cfg = load_config(p)
+    assert cfg.auth.username is None
+    assert cfg.auth.iterations == 200000
