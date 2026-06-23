@@ -1,5 +1,6 @@
 from . import bootstrap, paths, ui
 from .config import load_config, save_config
+from .cookies import inspect_cookies
 from .logging_setup import setup_logging, get_logger
 from .sync import sync_all, sync_playlist
 
@@ -13,8 +14,10 @@ def main() -> None:
     def save():
         save_config(config, config_file)
 
-    cookies = paths.cookies_path() if paths.cookies_path().exists() else None
+    cookies_status = inspect_cookies(paths.cookies_path())
+    cookies = paths.cookies_path() if cookies_status.present else None
     music_root = paths.music_root(config.settings.music_dir)
+    ui.show_cookies_status(cookies_status)
 
     ui.info("Sprawdzam zależności...")
     try:

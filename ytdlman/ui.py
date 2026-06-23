@@ -85,6 +85,20 @@ def progress(index: int, total: int, title: str) -> None:
     console.print(f"[cyan]\\[{index}/{total}][/cyan] Pobieram: {title}")
 
 
+def show_cookies_status(status) -> None:
+    if not status.present:
+        info("Nie wykryto pliku cookies.txt — pobieranie bez cookies "
+             "(część filmów może wymagać zalogowania).")
+        return
+    if not status.valid:
+        warn("Wykryto cookies.txt, ale wygląda niepoprawnie (brak poprawnych "
+             "wpisów cookie). Mimo to zostanie dołączony do yt-dlp.")
+        return
+    yt = "tak" if status.has_youtube else "nie"
+    success(f"Wykryto cookies.txt ({status.entry_count} wpisów, YouTube: {yt}) — "
+            "zostanie dołączony do yt-dlp.")
+
+
 def new_playlist(url: str, author: str, album: str) -> Playlist:
     return Playlist(id=str(uuid.uuid4()), url=url, author=author, album=album,
                     added_at=now_iso())
