@@ -11,7 +11,6 @@ from .config import Config, DependencyInfo
 from .logging_setup import get_logger
 
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
-YTDLP_DOWNLOAD_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
 DENO_DOWNLOAD_URL = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
 # Static FFmpeg build for Windows (changeable in one place if the source moves):

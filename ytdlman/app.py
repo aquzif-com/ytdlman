@@ -26,7 +26,7 @@ def main() -> None:
 
     sync_kwargs = dict(music_root=music_root, ytdlp=paths.ytdlp_path(),
                        ffmpeg_dir=paths.ffmpeg_dir(), bin_dir=paths.bin_dir(),
-                       cookies=cookies, save=save)
+                       cookies=cookies, save=save, on_progress=ui.progress)
 
     while True:
         try:

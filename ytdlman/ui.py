@@ -81,6 +81,10 @@ def warn(msg): console.print(f"[yellow]{msg}[/yellow]")
 def error(msg): console.print(f"[red]{msg}[/red]")
 
 
+def progress(index: int, total: int, title: str) -> None:
+    console.print(f"[cyan]\\[{index}/{total}][/cyan] Pobieram: {title}")
+
+
 def new_playlist(url: str, author: str, album: str) -> Playlist:
     return Playlist(id=str(uuid.uuid4()), url=url, author=author, album=album,
                     added_at=now_iso())
