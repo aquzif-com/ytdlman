@@ -102,3 +102,44 @@ def test_sync_playlist_marks_failed_and_continues(tmp_path):
     assert result.failed == 1
     assert pl.tracks[0].status == STATUS_FAILED
     assert pl.tracks[0].error
+
+
+import pytest
+from ytdlman.downloader import RateLimitError, PlaylistEntry
+
+
+def test_sync_playlist_aborts_and_rolls_back_on_ratelimit(tmp_path):
+    cfg = Config(settings=Settings(), dependencies={}, playlists=[])
+    pl = _playlist(next_track_number=1)
+    cfg.playlists.append(pl)
+
+    def entries_provider(url):
+        return [PlaylistEntry("v1", "Song"), PlaylistEntry("v2", "Song 2")]
+
+    def track_downloader(entry, dest_dir, track_number):
+        raise RateLimitError("429")
+
+    with pytest.raises(RateLimitError):
+        sync_playlist(
+            cfg, pl, music_root=tmp_path / "music", ytdlp=__import__("pathlib").Path("yt-dlp.exe"),
+            ffmpeg_dir=tmp_path, bin_dir=tmp_path, cookies=None, save=lambda: None,
+            entries_provider=entries_provider, track_downloader=track_downloader)
+
+    # reserved number rolled back; no failed track recorded; not advanced
+    assert pl.next_track_number == 1
+    assert pl.tracks == []
+
+
+def test_sync_playlist_aborts_on_ratelimit_during_listing(tmp_path):
+    cfg = Config(settings=Settings(), dependencies={}, playlists=[])
+    pl = _playlist()
+    cfg.playlists.append(pl)
+
+    def entries_provider(url):
+        raise RateLimitError("429 while listing")
+
+    with pytest.raises(RateLimitError):
+        sync_playlist(
+            cfg, pl, music_root=tmp_path / "music", ytdlp=__import__("pathlib").Path("yt-dlp.exe"),
+            ffmpeg_dir=tmp_path, bin_dir=tmp_path, cookies=None, save=lambda: None,
+            entries_provider=entries_provider, track_downloader=lambda *a: None)

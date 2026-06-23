@@ -5,7 +5,7 @@ from pathlib import Path
 from .clock import now_iso
 from .config import Config, Playlist, Track, STATUS_DOWNLOADED, STATUS_FAILED
 from .downloader import (
-    PlaylistEntry, TrackFiles, DownloadError,
+    PlaylistEntry, TrackFiles, DownloadError, RateLimitError, Throttle,
     list_playlist_entries, download_track,
 )
 from .logging_setup import get_logger
@@ -62,12 +62,19 @@ def sync_playlist(config: Config, playlist: Playlist, *, music_root: Path,
                   cookies: Path | None, save, entries_provider=None,
                   track_downloader=None, on_progress=None) -> SyncResult:
     log = get_logger()
+    throttle = Throttle(
+        sleep_interval=config.settings.sleep_interval,
+        max_sleep_interval=config.settings.max_sleep_interval,
+        limit_rate=config.settings.limit_rate,
+    )
     if entries_provider is None:
-        entries_provider = lambda url: list_playlist_entries(ytdlp, url, cookies)
+        entries_provider = lambda url: list_playlist_entries(
+            ytdlp, url, cookies, throttle=throttle)
     if track_downloader is None:
         track_downloader = lambda entry, dest, number: download_track(
             entry, dest, ytdlp=ytdlp, ffmpeg_dir=ffmpeg_dir, bin_dir=bin_dir,
-            cookies=cookies, audio_quality=config.settings.audio_quality)
+            cookies=cookies, audio_quality=config.settings.audio_quality,
+            throttle=throttle)
 
     entries = entries_provider(playlist.url)
     new = find_new_entries(playlist, entries)
@@ -97,6 +104,12 @@ def sync_playlist(config: Config, playlist: Playlist, *, music_root: Path,
                 status=STATUS_DOWNLOADED, file=str(final), downloaded_at=now_iso()))
             downloaded += 1
             log.info("[green]Pobrano[/green] %02d - %s", number, title)
+        except RateLimitError:
+            # 429: abort the whole sync. Do not mark the track failed; roll back
+            # the reserved number so numbering stays gap-free, then re-raise.
+            playlist.next_track_number -= 1
+            log.warning("[yellow]429[/yellow] — przerywam synchronizację playlisty.")
+            raise
         except Exception as exc:
             upsert_track(playlist, Track(
                 video_id=entry.video_id, track_number=number,
