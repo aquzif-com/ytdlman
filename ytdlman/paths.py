@@ -3,6 +3,8 @@ import re
 import sys
 from pathlib import Path
 
+from . import platform_target
+
 _ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -32,7 +34,7 @@ def cookies_path() -> Path:
 
 
 def ytdlp_path() -> Path:
-    return app_dir() / "yt-dlp.exe"
+    return app_dir() / f"yt-dlp{platform_target.exe_suffix()}"
 
 
 def ffmpeg_dir() -> Path:
@@ -40,15 +42,15 @@ def ffmpeg_dir() -> Path:
 
 
 def ffmpeg_path() -> Path:
-    return bin_dir() / "ffmpeg.exe"
+    return bin_dir() / f"ffmpeg{platform_target.exe_suffix()}"
 
 
 def ffprobe_path() -> Path:
-    return bin_dir() / "ffprobe.exe"
+    return bin_dir() / f"ffprobe{platform_target.exe_suffix()}"
 
 
 def deno_path() -> Path:
-    return bin_dir() / "deno.exe"
+    return bin_dir() / f"deno{platform_target.exe_suffix()}"
 
 
 def music_root(music_subdir: str) -> Path:

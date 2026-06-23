@@ -32,6 +32,7 @@ def test_extract_members_flattens_matching_basenames(tmp_path):
 
 
 def test_ensure_ytdlp_downloads_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("YTDLMAN_PLATFORM", "windows")
     monkeypatch.setenv("YTDLMAN_HOME", str(tmp_path))
     cfg = default_config()
     calls = {"n": 0}
@@ -47,6 +48,7 @@ def test_ensure_ytdlp_downloads_when_missing(tmp_path, monkeypatch):
 
 
 def test_current_status_reports_presence(tmp_path, monkeypatch):
+    monkeypatch.setenv("YTDLMAN_PLATFORM", "windows")
     monkeypatch.setenv("YTDLMAN_HOME", str(tmp_path))
     cfg = default_config()
     statuses = {s.name: s for s in bootstrap.current_status(cfg)}
