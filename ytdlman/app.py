@@ -22,7 +22,7 @@ def run_app_update(exe, current_version: str, *, prompt: bool = True) -> bool:
         return False
     if exe is None:
         ui.info(f"Dostępna nowsza wersja {chk.latest} (masz {current_version}), ale "
-                "auto-aktualizacja działa tylko na zbudowanym .exe (Windows).")
+                "auto-aktualizacja działa tylko na zbudowanej aplikacji (.exe / binarka).")
         return False
     if prompt and not ui.confirm(
             f"Dostępna nowa wersja {chk.latest} (masz {current_version}). "

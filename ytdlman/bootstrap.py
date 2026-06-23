@@ -24,10 +24,6 @@ DENO_ASSET = {
     "windows": "deno-x86_64-pc-windows-msvc.zip",
     "linux": "deno-x86_64-unknown-linux-gnu.zip",
 }
-DENO_URL = {
-    "windows": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
-    "linux": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip",
-}
 
 
 @dataclass
