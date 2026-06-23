@@ -1,20 +1,33 @@
 import io
 import json
+import tarfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import urlopen, Request
 
-from . import paths
+from . import paths, platform_target
 from .clock import now_iso
 from .config import Config, DependencyInfo
 from .logging_setup import get_logger
 
 YTDLP_RELEASE_API = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
 DENO_RELEASE_API = "https://api.github.com/repos/denoland/deno/releases/latest"
-DENO_DOWNLOAD_URL = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
-# Static FFmpeg build for Windows (changeable in one place if the source moves):
-FFMPEG_DOWNLOAD_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+# Per-platform dependency sources (single place to change if a source moves).
+YTDLP_ASSET = {"windows": "yt-dlp.exe", "linux": "yt-dlp_linux"}
+FFMPEG_URL = {
+    "windows": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+    "linux": "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+}
+DENO_ASSET = {
+    "windows": "deno-x86_64-pc-windows-msvc.zip",
+    "linux": "deno-x86_64-unknown-linux-gnu.zip",
+}
+DENO_URL = {
+    "windows": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
+    "linux": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip",
+}
 
 
 @dataclass
@@ -61,6 +74,25 @@ def extract_members(zip_path: Path, members_basenames: list[str], dest_dir: Path
     return extracted
 
 
+def extract_tar_members(tar_path: Path, members_basenames: list[str], dest_dir: Path) -> list[Path]:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    wanted = set(members_basenames)
+    extracted = []
+    with tarfile.open(tar_path, "r:xz") as tf:
+        for member in tf.getmembers():
+            if not member.isfile():
+                continue
+            base = Path(member.name).name
+            if base in wanted:
+                src = tf.extractfile(member)
+                if src is None:
+                    continue
+                target = dest_dir / base
+                target.write_bytes(src.read())
+                extracted.append(target)
+    return extracted
+
+
 def _record(config: Config, name: str, version: str | None, save) -> None:
     config.dependencies[name] = DependencyInfo(version=version, checked_at=now_iso())
     save()
@@ -73,8 +105,10 @@ def ensure_ytdlp(config: Config, *, fetch=urlopen_fetch, save=lambda: None) -> D
         log.info("Pobieram yt-dlp...")
         try:
             tag = github_latest_tag("yt-dlp/yt-dlp", fetch=fetch)
-            url = f"https://github.com/yt-dlp/yt-dlp/releases/download/{tag}/yt-dlp.exe"
+            asset = YTDLP_ASSET[platform_target.target_os()]
+            url = f"https://github.com/yt-dlp/yt-dlp/releases/download/{tag}/{asset}"
             download_file(url, target, fetch=fetch)
+            platform_target.make_executable(target)
         except Exception as exc:
             raise BootstrapError(f"Nie udało się pobrać yt-dlp: {exc}") from exc
         _record(config, "yt-dlp", tag, save)
@@ -86,15 +120,25 @@ def ensure_ffmpeg(config: Config, *, fetch=urlopen_fetch, save=lambda: None) -> 
     log = get_logger()
     if not paths.ffmpeg_path().exists():
         log.info("Pobieram ffmpeg...")
-        tmp_zip = paths.bin_dir() / "_ffmpeg.zip"
+        os_name = platform_target.target_os()
+        suffix = platform_target.exe_suffix()
+        members = [f"ffmpeg{suffix}", f"ffprobe{suffix}"]
+        if os_name == "windows":
+            tmp = paths.bin_dir() / "_ffmpeg.zip"
+            extractor = extract_members
+        else:
+            tmp = paths.bin_dir() / "_ffmpeg.tar.xz"
+            extractor = extract_tar_members
         try:
-            download_file(FFMPEG_DOWNLOAD_URL, tmp_zip, fetch=fetch)
-            extract_members(tmp_zip, ["ffmpeg.exe", "ffprobe.exe"], paths.bin_dir())
+            download_file(FFMPEG_URL[os_name], tmp, fetch=fetch)
+            extractor(tmp, members, paths.bin_dir())
+            platform_target.make_executable(paths.ffmpeg_path())
+            platform_target.make_executable(paths.ffprobe_path())
         except Exception as exc:
             raise BootstrapError(f"Nie udało się pobrać ffmpeg: {exc}") from exc
         finally:
-            if tmp_zip.exists():
-                tmp_zip.unlink()
+            if tmp.exists():
+                tmp.unlink()
         _record(config, "ffmpeg", "bundled", save)
         return DepStatus("ffmpeg", True, "bundled")
     return DepStatus("ffmpeg", True, config.dependencies.get("ffmpeg", DependencyInfo()).version)
@@ -104,11 +148,15 @@ def ensure_deno(config: Config, *, fetch=urlopen_fetch, save=lambda: None) -> De
     log = get_logger()
     if not paths.deno_path().exists():
         log.info("Pobieram Deno...")
+        os_name = platform_target.target_os()
         tmp_zip = paths.bin_dir() / "_deno.zip"
         try:
             tag = github_latest_tag("denoland/deno", fetch=fetch)
-            download_file(DENO_DOWNLOAD_URL, tmp_zip, fetch=fetch)
-            extract_members(tmp_zip, ["deno.exe"], paths.bin_dir())
+            asset = DENO_ASSET[os_name]
+            url = f"https://github.com/denoland/deno/releases/download/{tag}/{asset}"
+            download_file(url, tmp_zip, fetch=fetch)
+            extract_members(tmp_zip, [f"deno{platform_target.exe_suffix()}"], paths.bin_dir())
+            platform_target.make_executable(paths.deno_path())
         except Exception as exc:
             raise BootstrapError(f"Nie udało się pobrać Deno: {exc}") from exc
         finally:
