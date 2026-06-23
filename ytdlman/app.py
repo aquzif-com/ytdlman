@@ -1,8 +1,39 @@
-from . import bootstrap, paths, ui
+from . import bootstrap, paths, ui, updater
 from .config import load_config, save_config
 from .cookies import inspect_cookies
 from .logging_setup import setup_logging, get_logger
 from .sync import sync_all, sync_playlist
+from version import APP_VERSION
+
+
+def run_app_update(exe, current_version: str, *, prompt: bool = True) -> bool:
+    """Check for a newer release and, with consent, swap in the new exe.
+
+    Returns True when an update was applied (the caller should ask the user to
+    restart). Self-update only works on the built .exe.
+    """
+    chk = updater.check_for_update(current_version)
+    if chk.latest is None:
+        ui.warn("Nie udało się sprawdzić aktualizacji aplikacji (szczegóły w logs/).")
+        return False
+    if not chk.available:
+        ui.info(f"Masz najnowszą wersję aplikacji ({current_version}).")
+        return False
+    if exe is None:
+        ui.info(f"Dostępna nowsza wersja {chk.latest} (masz {current_version}), ale "
+                "auto-aktualizacja działa tylko na zbudowanym .exe (Windows).")
+        return False
+    if prompt and not ui.confirm(
+            f"Dostępna nowa wersja {chk.latest} (masz {current_version}). "
+            "Zaktualizować teraz?"):
+        return False
+    try:
+        updater.apply_update(exe)
+        ui.success(f"Zaktualizowano do {chk.latest}. Uruchom aplikację ponownie.")
+        return True
+    except updater.UpdateError as exc:
+        ui.error(f"Aktualizacja nie powiodła się: {exc} (szczegóły w logs/).")
+        return False
 
 
 def main() -> None:
@@ -26,6 +57,12 @@ def main() -> None:
     except bootstrap.BootstrapError as exc:
         ui.error(f"Problem z zależnościami: {exc} (szczegóły w logs/). "
                  "Niektóre funkcje mogą nie działać.")
+
+    exe = updater.running_exe()
+    if exe is not None:
+        updater.cleanup_old_executable(exe)
+    if config.settings.auto_check_updates and run_app_update(exe, APP_VERSION):
+        return  # updated — user must restart to run the new version
 
     sync_kwargs = dict(music_root=music_root, ytdlp=paths.ytdlp_path(),
                        ffmpeg_dir=paths.ffmpeg_dir(), bin_dir=paths.bin_dir(),
@@ -72,6 +109,9 @@ def main() -> None:
                         ui.show_dependencies(bootstrap.ensure_all(config, save=save))
                     except bootstrap.BootstrapError as exc:
                         ui.error(f"Problem z aktualizacją: {exc} (szczegóły w logs/).")
+            elif choice == "update":
+                if run_app_update(exe, APP_VERSION):
+                    return
             elif choice == "settings":
                 ui.info(f"music_dir={config.settings.music_dir}, "
                         f"audio_quality={config.settings.audio_quality}, "

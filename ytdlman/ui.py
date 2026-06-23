@@ -15,6 +15,7 @@ MENU_CHOICES = {
     "Lista playlist": "list",
     "Usuń playlistę": "remove",
     "Zależności / aktualizacje": "deps",
+    "Aktualizuj aplikację": "update",
     "Ustawienia": "settings",
     "Wyjście": "exit",
 }
