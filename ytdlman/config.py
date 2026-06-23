@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,30 @@ from .logging_setup import get_logger
 
 STATUS_DOWNLOADED = "downloaded"
 STATUS_FAILED = "failed"
+
+
+def validate_throttle(sleep_raw, max_raw, limit_raw) -> tuple[int, int, str]:
+    """Parse and validate throttle settings from (possibly string) user input.
+
+    Returns the normalized (sleep_interval, max_sleep_interval, limit_rate).
+    Raises ValueError with a Polish message on invalid input.
+    """
+    try:
+        sleep = int(str(sleep_raw).strip())
+    except ValueError:
+        raise ValueError("Przerwa min musi być liczbą całkowitą ≥ 0.")
+    try:
+        maximum = int(str(max_raw).strip())
+    except ValueError:
+        raise ValueError("Przerwa max musi być liczbą całkowitą ≥ 0.")
+    if sleep < 0 or maximum < 0:
+        raise ValueError("Przerwy muszą być ≥ 0.")
+    if maximum < sleep:
+        raise ValueError("Przerwa max musi być ≥ przerwy min.")
+    limit = str(limit_raw).strip().upper()
+    if limit and not re.fullmatch(r"\d+[KMG]?", limit):
+        raise ValueError("Limit pasma musi być puste lub w formacie 500K / 1M.")
+    return sleep, maximum, limit
 
 _DEP_NAMES = ("yt-dlp", "ffmpeg", "deno")
 
@@ -46,6 +71,9 @@ class Settings:
     music_dir: str = "music"
     audio_quality: str = "320"
     auto_check_updates: bool = True
+    sleep_interval: int = 5
+    max_sleep_interval: int = 20
+    limit_rate: str = ""
 
 
 @dataclass
