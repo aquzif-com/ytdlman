@@ -12,3 +12,4 @@ config.json
 cookies.txt
 yt-dlp.exe
 .pytest_cache/
+.DS_Store
