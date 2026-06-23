@@ -77,3 +77,25 @@ def test_cleanup_removes_old_executable(tmp_path):
 def test_cleanup_noop_when_no_old(tmp_path):
     exe = tmp_path / "ytdlman.exe"
     cleanup_old_executable(exe)  # must not raise
+
+
+import os
+
+
+def test_release_asset_url_per_platform(monkeypatch):
+    import ytdlman.updater as updater
+    monkeypatch.setenv("YTDLMAN_PLATFORM", "windows")
+    assert updater.release_asset_url().endswith("/ytdlman.exe")
+    monkeypatch.setenv("YTDLMAN_PLATFORM", "linux")
+    assert updater.release_asset_url().endswith("/ytdlman-linux")
+
+
+def test_apply_update_marks_executable_on_linux(monkeypatch, tmp_path):
+    import ytdlman.updater as updater
+    monkeypatch.setenv("YTDLMAN_PLATFORM", "linux")
+    exe = tmp_path / "ytdlman-linux"
+    exe.write_bytes(b"OLD")
+    result = updater.apply_update(exe, fetch=lambda url: b"NEW", download_url="http://x")
+    assert result == exe
+    assert exe.read_bytes() == b"NEW"
+    assert os.access(exe, os.X_OK)

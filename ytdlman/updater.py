@@ -4,9 +4,14 @@ from pathlib import Path
 
 from .bootstrap import github_latest_tag, download_file, urlopen_fetch
 from .logging_setup import get_logger
+from .platform_target import target_os, make_executable
 
 REPO = "aquzif-com/ytdlman"
-DOWNLOAD_URL = f"https://github.com/{REPO}/releases/latest/download/ytdlman.exe"
+ASSET = {"windows": "ytdlman.exe", "linux": "ytdlman-linux"}
+
+
+def release_asset_url() -> str:
+    return f"https://github.com/{REPO}/releases/latest/download/{ASSET[target_os()]}"
 
 
 class UpdateError(Exception):
@@ -72,7 +77,7 @@ def cleanup_old_executable(exe: Path) -> None:
         get_logger().debug("Nie udało się usunąć starego pliku %s: %s", old, exc)
 
 
-def apply_update(exe: Path, *, fetch=urlopen_fetch, download_url: str = DOWNLOAD_URL) -> Path:
+def apply_update(exe: Path, *, fetch=urlopen_fetch, download_url: str | None = None) -> Path:
     """Download the new exe and swap it into place. Returns the final exe path.
 
     Windows allows renaming a running exe but not overwriting it, so we
@@ -80,6 +85,8 @@ def apply_update(exe: Path, *, fetch=urlopen_fetch, download_url: str = DOWNLOAD
     .new file into place. The caller must restart; the stale .old file is
     removed on the next launch via cleanup_old_executable().
     """
+    if download_url is None:
+        download_url = release_asset_url()
     log = get_logger()
     new = _new_path(exe)
     old = _old_path(exe)
@@ -100,5 +107,6 @@ def apply_update(exe: Path, *, fetch=urlopen_fetch, download_url: str = DOWNLOAD
     except OSError as exc:
         raise UpdateError(f"Nie udało się podmienić pliku aplikacji: {exc}") from exc
 
+    make_executable(exe)
     log.info("Zaktualizowano aplikację: %s", exe)
     return exe
