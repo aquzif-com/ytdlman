@@ -85,3 +85,82 @@ def test_download_track_raises_when_audio_missing(tmp_path):
         download_track(PlaylistEntry("vid", "T"), dest, ytdlp=Path("yt-dlp.exe"),
                        ffmpeg_dir=tmp_path, bin_dir=tmp_path, cookies=None,
                        audio_quality="320", runner=fake_runner)
+
+
+# New throttle and 429 detection tests
+from ytdlman.downloader import (
+    Throttle, RateLimitError, _is_rate_limited,
+)
+
+
+def test_download_command_includes_throttle_when_enabled(tmp_path):
+    cmd = build_download_command(
+        ytdlp=Path("yt-dlp.exe"), video_id="vid",
+        out_template=str(tmp_path / "%(id)s.%(ext)s"),
+        audio_quality="320", ffmpeg_dir=tmp_path, cookies=None,
+        throttle=Throttle(sleep_interval=5, max_sleep_interval=20, limit_rate="1M"))
+    assert "--sleep-interval" in cmd and "5" in cmd
+    assert "--max-sleep-interval" in cmd and "20" in cmd
+    assert "--sleep-requests" in cmd
+    assert "--limit-rate" in cmd and "1M" in cmd
+
+
+def test_download_command_omits_throttle_when_disabled(tmp_path):
+    cmd = build_download_command(
+        ytdlp=Path("yt-dlp.exe"), video_id="vid",
+        out_template=str(tmp_path / "%(id)s.%(ext)s"),
+        audio_quality="320", ffmpeg_dir=tmp_path, cookies=None,
+        throttle=Throttle())
+    assert "--sleep-interval" not in cmd
+    assert "--limit-rate" not in cmd
+
+
+def test_download_command_limit_rate_independent_of_sleep(tmp_path):
+    cmd = build_download_command(
+        ytdlp=Path("yt-dlp.exe"), video_id="vid",
+        out_template=str(tmp_path / "%(id)s.%(ext)s"),
+        audio_quality="320", ffmpeg_dir=tmp_path, cookies=None,
+        throttle=Throttle(sleep_interval=0, max_sleep_interval=0, limit_rate="500K"))
+    assert "--limit-rate" in cmd and "500K" in cmd
+    assert "--sleep-interval" not in cmd
+
+
+def test_entries_command_adds_sleep_requests_when_enabled():
+    cmd = build_entries_command(Path("yt-dlp.exe"), "http://list", None,
+                                throttle=Throttle(sleep_interval=5, max_sleep_interval=20))
+    assert "--sleep-requests" in cmd
+    cmd2 = build_entries_command(Path("yt-dlp.exe"), "http://list", None,
+                                 throttle=Throttle())
+    assert "--sleep-requests" not in cmd2
+
+
+def test_is_rate_limited():
+    assert _is_rate_limited("ERROR: unable: HTTP Error 429: Too Many Requests") is True
+    assert _is_rate_limited("ERROR: Video unavailable") is False
+    assert _is_rate_limited("") is False
+
+
+def test_list_playlist_entries_raises_ratelimit_on_429():
+    def runner(cmd, *, env=None):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="HTTP Error 429: Too Many Requests")
+    with pytest.raises(RateLimitError):
+        list_playlist_entries(Path("yt-dlp.exe"), "http://l", None, runner=runner)
+
+
+def test_list_playlist_entries_channel_url_parses(tmp_path):
+    def runner(cmd, *, env=None):
+        assert "https://www.youtube.com/@chan/videos" in cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="a\tSong A\nb\tSong B\n", stderr="")
+    entries = list_playlist_entries(Path("yt-dlp.exe"),
+                                    "https://www.youtube.com/@chan/videos", None, runner=runner)
+    assert [e.video_id for e in entries] == ["a", "b"]
+
+
+def test_download_track_raises_ratelimit_on_429(tmp_path):
+    dest = tmp_path / "alb"; dest.mkdir()
+    def runner(cmd, *, env=None):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ERROR: HTTP Error 429: Too Many Requests")
+    with pytest.raises(RateLimitError):
+        download_track(PlaylistEntry("vid", "T"), dest, ytdlp=Path("yt-dlp.exe"),
+                       ffmpeg_dir=tmp_path, bin_dir=tmp_path, cookies=None,
+                       audio_quality="320", runner=runner)
