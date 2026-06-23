@@ -1,6 +1,7 @@
 from . import bootstrap, paths, ui, updater
 from .config import load_config, save_config
 from .cookies import inspect_cookies
+from .downloader import RateLimitError
 from .logging_setup import setup_logging, get_logger
 from .sync import sync_all, sync_playlist
 from version import APP_VERSION
@@ -74,15 +75,27 @@ def main() -> None:
             if choice == "exit":
                 save(); ui.info("Do zobaczenia!"); return
             elif choice == "sync_all":
-                results = sync_all(config, **sync_kwargs)
-                total = sum(r.downloaded for r in results.values())
-                fails = sum(r.failed for r in results.values())
-                ui.success(f"Gotowe. Pobrano {total}, błędów {fails}.")
+                try:
+                    results = sync_all(config, **sync_kwargs)
+                    total = sum(r.downloaded for r in results.values())
+                    fails = sum(r.failed for r in results.values())
+                    ui.success(f"Gotowe. Pobrano {total}, błędów {fails}.")
+                except RateLimitError:
+                    ui.warn("YouTube ogranicza pobieranie (błąd 429). Przerwano "
+                            "synchronizację. Zwiększ przerwy w Ustawieniach i "
+                            "spróbuj później.")
+                    ui.pause()
             elif choice == "sync_one":
                 pl = ui.select_playlist(config.playlists)
                 if pl:
-                    r = sync_playlist(config, pl, **sync_kwargs)
-                    ui.success(f"Gotowe. Pobrano {r.downloaded}, błędów {r.failed}.")
+                    try:
+                        r = sync_playlist(config, pl, **sync_kwargs)
+                        ui.success(f"Gotowe. Pobrano {r.downloaded}, błędów {r.failed}.")
+                    except RateLimitError:
+                        ui.warn("YouTube ogranicza pobieranie (błąd 429). Przerwano "
+                                "synchronizację. Zwiększ przerwy w Ustawieniach i "
+                                "spróbuj później.")
+                        ui.pause()
             elif choice == "add":
                 data = ui.prompt_add_playlist()
                 if data:
@@ -113,9 +126,9 @@ def main() -> None:
                 if run_app_update(exe, APP_VERSION):
                     return
             elif choice == "settings":
-                ui.info(f"music_dir={config.settings.music_dir}, "
-                        f"audio_quality={config.settings.audio_quality}, "
-                        f"auto_check_updates={config.settings.auto_check_updates}")
+                if ui.edit_settings(config.settings):
+                    save()
+                    ui.success("Zapisano ustawienia.")
         except KeyboardInterrupt:
             save(); ui.warn("Przerwano. Zapisano konfigurację. Wychodzę."); return
         except Exception as exc:  # last-resort guard — no raw stacktrace to user

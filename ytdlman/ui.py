@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .clock import now_iso
-from .config import Playlist
+from .config import Playlist, validate_throttle
 
 console = Console()
 
@@ -80,6 +80,54 @@ def info(msg): console.print(f"[cyan]{msg}[/cyan]")
 def success(msg): console.print(f"[green]{msg}[/green]")
 def warn(msg): console.print(f"[yellow]{msg}[/yellow]")
 def error(msg): console.print(f"[red]{msg}[/red]")
+
+
+def pause(message: str = "Naciśnij Enter, aby wrócić do menu...") -> None:
+    try:
+        questionary.press_any_key_to_continue(message).ask()
+    except Exception:
+        try:
+            input(message)
+        except EOFError:
+            pass
+
+
+def edit_settings(settings) -> bool:
+    """Edit settings in place. Returns True if applied, False if cancelled."""
+    audio_quality = questionary.text(
+        "Jakość audio (np. 320):", default=settings.audio_quality).ask()
+    if audio_quality is None:
+        return False
+    while True:
+        sleep_raw = questionary.text(
+            "Przerwa min (s):", default=str(settings.sleep_interval)).ask()
+        if sleep_raw is None:
+            return False
+        max_raw = questionary.text(
+            "Przerwa max (s):", default=str(settings.max_sleep_interval)).ask()
+        if max_raw is None:
+            return False
+        limit_raw = questionary.text(
+            "Limit pasma (puste / 500K / 1M):", default=settings.limit_rate).ask()
+        if limit_raw is None:
+            return False
+        try:
+            sleep_interval, max_sleep_interval, limit_rate = validate_throttle(
+                sleep_raw, max_raw, limit_raw)
+            break
+        except ValueError as exc:
+            error(str(exc))
+    auto = questionary.confirm(
+        "Auto-sprawdzanie aktualizacji aplikacji?",
+        default=settings.auto_check_updates).ask()
+    if auto is None:
+        return False
+    settings.audio_quality = audio_quality.strip() or settings.audio_quality
+    settings.sleep_interval = sleep_interval
+    settings.max_sleep_interval = max_sleep_interval
+    settings.limit_rate = limit_rate
+    settings.auto_check_updates = bool(auto)
+    return True
 
 
 def progress(index: int, total: int, title: str) -> None:
