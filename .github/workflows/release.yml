@@ -51,3 +51,45 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/ytdlman.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pytest
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Verify tag matches APP_VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          ver=$(python -c "from version import APP_VERSION; print(APP_VERSION)")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$ver" != "$tag" ]; then
+            echo "Tag $tag does not match APP_VERSION $ver"
+            exit 1
+          fi
+
+      - name: Build linux binary
+        run: pyinstaller --onefile --name ytdlman-linux main.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ytdlman-linux
+          path: dist/ytdlman-linux
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ytdlman-linux
