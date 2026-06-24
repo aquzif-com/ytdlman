@@ -83,3 +83,23 @@ def test_csrf_rejected_on_setup(tmp_path):
     r = c.post("/setup", data={"csrf_token": "WRONG", "username": "a",
                                "password": "p", "confirm": "p"})
     assert r.status_code == 400
+
+
+def test_csrf_rejected_on_login(tmp_path):
+    app, _, _ = _client(tmp_path, account=True)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["csrf_token"] = "tok"
+    r = c.post("/login", data={"csrf_token": "WRONG", "username": "admin",
+                               "password": "pw"})
+    assert r.status_code == 400
+
+
+def test_csrf_rejected_on_logout(tmp_path):
+    app, _, _ = _client(tmp_path, account=True)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["logged_in"] = True
+        s["csrf_token"] = "tok"
+    r = c.post("/logout", data={"csrf_token": "WRONG"})
+    assert r.status_code == 400
