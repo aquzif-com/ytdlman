@@ -29,7 +29,7 @@ form{margin:.5rem 0}label{display:block;margin:.5rem 0 .2rem}
 {% with msgs = get_flashed_messages(with_categories=true) %}
   {% for cat, msg in msgs %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
 {% endwith %}
-{{ body }}
+{{ body|safe }}
 </body></html>"""
 
 _SETUP = """<h1>Utwórz konto</h1>

@@ -141,6 +141,27 @@ def test_update_check_reports(tmp_path, monkeypatch):
     assert "v9.9.9" in r.get_data(as_text=True)
 
 
+def test_pages_render_real_html_not_escaped(tmp_path):
+    # Guard against double-escaping: the body must be real HTML markup,
+    # not HTML-escaped text. Check the setup page (no account yet).
+    app, _, _ = _client(tmp_path)
+    c = app.test_client()
+    html = c.get("/setup", follow_redirects=False).get_data(as_text=True)
+    assert "<h1>" in html                      # real heading tag
+    assert '<input name="username"' in html    # real form input
+    assert "&lt;h1&gt;" not in html            # NOT escaped
+
+
+def test_dashboard_renders_real_html(tmp_path):
+    app, _, _ = _client(tmp_path, account=True)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["logged_in"] = True
+    html = c.get("/").get_data(as_text=True)
+    assert "<table" in html                     # real dependency table
+    assert "&lt;table" not in html
+
+
 def test_cookies_save_and_delete(tmp_path, monkeypatch):
     monkeypatch.setenv("YTDLMAN_HOME", str(tmp_path))
     app, cfg, config_file, c = _logged_in_client(tmp_path)
