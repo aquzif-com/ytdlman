@@ -5,10 +5,12 @@ from functools import wraps
 from flask import (Flask, session, redirect, url_for, request,
                    render_template_string, flash, abort)
 
-from . import bootstrap, paths
+from . import bootstrap, paths, updater
 from .auth import is_configured, verify_password, create_account
-from .config import save_config
+from .config import load_config, save_config
 from .cookies import inspect_cookies
+from .logging_setup import setup_logging, get_logger
+from version import APP_VERSION
 
 SESSION_DAYS = 7
 
@@ -46,16 +48,32 @@ _LOGIN = """<h1>Logowanie</h1>
 <label>Hasło</label><input name="password" type="password" required>
 <p><button type="submit">Zaloguj</button></p></form>"""
 
-# Dashboard body for Task 4 is read-only (no action forms yet).
 _DASHBOARD = """<h1>YTDLMAN</h1>
 <form method="post" action="{{ url_for('logout') }}" style="float:right">
 <input type="hidden" name="csrf_token" value="{{ csrf }}">
 <button type="submit">Wyloguj</button></form>
+<h2>Aplikacja</h2>
+<p>Wersja: {{ app_version }}.
+<form method="post" action="{{ url_for('update_check') }}" style="display:inline">
+<input type="hidden" name="csrf_token" value="{{ csrf }}">
+<button type="submit">Sprawdź aktualizację</button></form></p>
 <h2>Zależności</h2>
-<table><tr><th>Nazwa</th><th>Obecna</th><th>Wersja</th></tr>
+<table><tr><th>Nazwa</th><th>Obecna</th><th>Wersja</th><th></th></tr>
 {% for d in deps %}<tr><td>{{ d.name }}</td>
-<td>{{ "tak" if d.present else "nie" }}</td><td>{{ d.version or "—" }}</td></tr>{% endfor %}
+<td>{{ "tak" if d.present else "nie" }}</td><td>{{ d.version or "—" }}</td>
+<td><form method="post" action="{{ url_for('deps_refresh', name=d.name) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf }}">
+<button type="submit">Pobierz / Aktualizuj</button></form></td></tr>{% endfor %}
 </table>
+<h2>Cookies</h2>
+<p>Status: {% if cookies.present %}wykryto ({{ cookies.entry_count }} wpisów,
+YouTube: {{ "tak" if cookies.has_youtube else "nie" }}){% else %}brak pliku{% endif %}.</p>
+<form method="post" action="{{ url_for('cookies_save') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf }}">
+<label>Treść cookies.txt</label>
+<textarea name="content" rows="6" placeholder="# Netscape HTTP Cookie File ..."></textarea>
+<p><button type="submit">Zapisz cookies</button>
+<button type="submit" name="action" value="delete">Usuń cookies</button></p></form>
 <h2>Playlisty</h2>
 {% if playlists %}<table><tr><th>Autor</th><th>Album</th><th>Utworów</th></tr>
 {% for p in playlists %}<tr><td>{{ p.author }}</td><td>{{ p.album }}</td>
@@ -152,12 +170,89 @@ def create_app(config, config_file):
     @login_required
     def dashboard():
         return render_template_string(_BASE, body=render_template_string(
-            _DASHBOARD, csrf=_csrf_token(),
-            deps=bootstrap.current_status(config), playlists=config.playlists))
+            _DASHBOARD, csrf=_csrf_token(), app_version=APP_VERSION,
+            deps=bootstrap.current_status(config),
+            cookies=inspect_cookies(paths.cookies_path()),
+            playlists=config.playlists))
+
+    @app.route("/deps/<name>/refresh", methods=["POST"])
+    @login_required
+    def deps_refresh(name):
+        _check_csrf()
+        try:
+            if name == "yt-dlp":
+                paths.ytdlp_path().unlink(missing_ok=True)
+                bootstrap.ensure_ytdlp(config, save=save)
+            elif name == "ffmpeg":
+                paths.ffmpeg_path().unlink(missing_ok=True)
+                paths.ffprobe_path().unlink(missing_ok=True)
+                bootstrap.ensure_ffmpeg(config, save=save)
+            elif name == "deno":
+                paths.deno_path().unlink(missing_ok=True)
+                bootstrap.ensure_deno(config, save=save)
+            else:
+                abort(404)
+            flash(f"Zaktualizowano: {name}.", "success")
+        except bootstrap.BootstrapError as exc:
+            flash(f"Błąd aktualizacji {name}: {exc}", "error")
+        return redirect(url_for("dashboard"))
+
+    @app.route("/update/check", methods=["POST"])
+    @login_required
+    def update_check():
+        _check_csrf()
+        chk = updater.check_for_update(APP_VERSION)
+        if chk.latest is None:
+            flash("Nie udało się sprawdzić aktualizacji (szczegóły w logs/).", "error")
+        elif chk.available:
+            flash(f"Dostępna nowsza wersja {chk.latest} (masz {APP_VERSION}).", "success")
+        else:
+            flash(f"Masz najnowszą wersję ({APP_VERSION}).", "success")
+        return redirect(url_for("dashboard"))
+
+    @app.route("/cookies", methods=["POST"])
+    @login_required
+    def cookies_save():
+        _check_csrf()
+        path = paths.cookies_path()
+        if request.form.get("action") == "delete":
+            path.unlink(missing_ok=True)
+            flash("Usunięto cookies.txt.", "success")
+        else:
+            content = request.form.get("content", "")
+            upload = request.files.get("file")
+            if upload and upload.filename:
+                content = upload.read().decode("utf-8", errors="replace")
+            path.write_text(content, encoding="utf-8")
+            info = inspect_cookies(path)
+            flash(f"Zapisano cookies.txt ({info.entry_count} wpisów).", "success")
+        return redirect(url_for("dashboard"))
 
     return app
 
 
 def run(port: int) -> None:
-    """Start the web server on 0.0.0.0:PORT. Implemented in Task 5."""
-    raise NotImplementedError("Server mode not yet implemented")
+    setup_logging()
+    log = get_logger()
+    config_file = paths.config_path()
+    config = load_config(config_file)
+
+    def save():
+        save_config(config, config_file)
+
+    log.info("Sprawdzam zależności...")
+    try:
+        bootstrap.ensure_all(config, save=save)
+    except bootstrap.BootstrapError as exc:
+        log.error("Problem z zależnościami: %s (start kontynuowany).", exc)
+
+    chk = updater.check_for_update(APP_VERSION)
+    if chk.latest and chk.available:
+        log.info("Dostępna nowsza wersja aplikacji: %s (masz %s).", chk.latest, APP_VERSION)
+    elif chk.latest:
+        log.info("Aplikacja aktualna (%s).", APP_VERSION)
+
+    app = create_app(config, config_file)
+    log.info("Serwer WWW: http://0.0.0.0:%d "
+             "(pierwsze wejście poprosi o założenie konta)", port)
+    app.run(host="0.0.0.0", port=port)

@@ -103,3 +103,51 @@ def test_csrf_rejected_on_logout(tmp_path):
         s["csrf_token"] = "tok"
     r = c.post("/logout", data={"csrf_token": "WRONG"})
     assert r.status_code == 400
+
+
+def _logged_in_client(tmp_path):
+    app, cfg, config_file = _client(tmp_path, account=True)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["logged_in"] = True
+        s["csrf_token"] = "tok"
+    return app, cfg, config_file, c
+
+
+def test_deps_refresh_calls_bootstrap(tmp_path, monkeypatch):
+    import ytdlman.webserver as ws
+    calls = {}
+    monkeypatch.setattr(ws.bootstrap, "ensure_ytdlp",
+                        lambda config, save=None: calls.__setitem__("ytdlp", True))
+    app, cfg, config_file, c = _logged_in_client(tmp_path)
+    r = c.post("/deps/yt-dlp/refresh", data={"csrf_token": "tok"}, follow_redirects=False)
+    assert r.status_code == 302
+    assert calls.get("ytdlp") is True
+
+
+def test_deps_refresh_unknown_name_404(tmp_path):
+    app, cfg, config_file, c = _logged_in_client(tmp_path)
+    r = c.post("/deps/bogus/refresh", data={"csrf_token": "tok"})
+    assert r.status_code == 404
+
+
+def test_update_check_reports(tmp_path, monkeypatch):
+    import ytdlman.webserver as ws
+    from ytdlman.updater import UpdateCheck
+    monkeypatch.setattr(ws.updater, "check_for_update",
+                        lambda v: UpdateCheck(current=v, latest="v9.9.9", available=True))
+    app, cfg, config_file, c = _logged_in_client(tmp_path)
+    r = c.post("/update/check", data={"csrf_token": "tok"}, follow_redirects=True)
+    assert "v9.9.9" in r.get_data(as_text=True)
+
+
+def test_cookies_save_and_delete(tmp_path, monkeypatch):
+    monkeypatch.setenv("YTDLMAN_HOME", str(tmp_path))
+    app, cfg, config_file, c = _logged_in_client(tmp_path)
+    body = ".youtube.com\tTRUE\t/\tTRUE\t1799999999\tSID\tx\n"
+    c.post("/cookies", data={"csrf_token": "tok", "content": body})
+    from ytdlman import paths
+    assert paths.cookies_path().exists()
+    assert paths.cookies_path().read_text(encoding="utf-8") == body
+    c.post("/cookies", data={"csrf_token": "tok", "action": "delete"})
+    assert not paths.cookies_path().exists()
